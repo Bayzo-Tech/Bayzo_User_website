@@ -6,7 +6,7 @@ import { useUser } from "@/context/UserContext";
 import { ArrowLeft, MapPin, ShoppingBag, AlertCircle, X } from "lucide-react";
 import Script from "next/script";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
 
 declare global {
   interface Window {
@@ -30,9 +30,11 @@ export default function PaymentPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [razorpayLoaded, setRazorpayLoaded] = useState(false);
-  // ✅ Problem 4 Fix: Payment fail popup state
   const [showFailPopup, setShowFailPopup] = useState(false);
   const [failMessage, setFailMessage] = useState("");
+  // ✅ FIX: Customer details state
+  const [customerName, setCustomerName] = useState("Customer");
+  const [customerPhone, setCustomerPhone] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem("bayzo_cart");
@@ -44,6 +46,26 @@ export default function PaymentPage() {
       router.replace("/cart");
     }
   }, []);
+
+  // ✅ FIX: Fetch customer name & phone from Firestore when user loads
+  useEffect(() => {
+    const fetchCustomerDetails = async () => {
+      if (!user?.uid) return;
+      try {
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          if (data.name) setCustomerName(data.name);
+          // phone: "919751818488" → display as "9751818488"
+          const rawPhone = data.displayPhone || data.phone?.replace("91", "") || "";
+          setCustomerPhone(rawPhone);
+        }
+      } catch (e) {
+        console.error("Error fetching customer details:", e);
+      }
+    };
+    fetchCustomerDetails();
+  }, [user]);
 
   const finalPrice = (item: CartItem) => {
     if (item.offer > 0)
@@ -67,13 +89,23 @@ export default function PaymentPage() {
       key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
       amount: total * 100,
       currency: "INR",
-      name: "VAYRA",
+      name: "BAYZO",
       description: "Beach Food Delivery",
       handler: async function (response: any) {
         try {
+          // ✅ FIX: customerName, customerPhone, vendorName now saved properly
+          const vendorName = cart.length > 0 ? cart[0].stallName : "Unknown Vendor";
+          const itemsSummary = cart.map(i => `${i.quantity}x ${i.name}`).join(", ");
+
           await addDoc(collection(db, "orders"), {
             userId: user?.uid || "guest",
-            phone: user?.phoneNumber || "unknown",
+            // ✅ These 3 fields fix the "Unknown" problem in admin panel
+            customerName: customerName,
+            customerPhone: customerPhone,
+            vendorName: vendorName,
+            itemsSummary: itemsSummary,
+            // existing fields unchanged below
+            phone: user?.phoneNumber || customerPhone || "unknown",
             location: { area, zone: `Zone ${zone}` },
             items: cart.map((i) => ({
               name: i.name,
@@ -97,11 +129,10 @@ export default function PaymentPage() {
         }
       },
       prefill: {
-        contact: user?.phoneNumber?.replace("+91", "") || "",
+        contact: customerPhone || user?.phoneNumber?.replace("+91", "") || "",
       },
       theme: { color: "#FF6B00" },
       modal: {
-        // ✅ Problem 3 Fix: When user closes Razorpay modal - button unstuck
         ondismiss: function () {
           setIsProcessing(false);
         },
@@ -111,11 +142,12 @@ export default function PaymentPage() {
     try {
       const rzp = new window.Razorpay(options);
 
-      // ✅ Problem 4 Fix: Payment failed - show popup instead of redirect
       rzp.on("payment.failed", async (response: any) => {
         try {
           await addDoc(collection(db, "orders"), {
             userId: user?.uid || "guest",
+            customerName: customerName,
+            customerPhone: customerPhone,
             paymentStatus: "failed",
             orderStatus: "failed",
             errorCode: response.error?.code || "",
@@ -126,7 +158,6 @@ export default function PaymentPage() {
           console.error(e);
         } finally {
           setIsProcessing(false);
-          // ✅ Show popup with error message
           setFailMessage(
             response.error?.description || "Payment failed. Please try again."
           );
@@ -149,7 +180,7 @@ export default function PaymentPage() {
         onLoad={() => setRazorpayLoaded(true)}
       />
 
-      {/* ✅ Problem 4 Fix: Payment Failed Popup */}
+      {/* Payment Failed Popup */}
       {showFailPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
           <div className="bg-card rounded-3xl p-6 w-full max-w-sm border border-border shadow-2xl">
@@ -284,7 +315,7 @@ export default function PaymentPage() {
         <div className="h-4" />
       </div>
 
-      {/* ✅ Fix: Pay button always visible at bottom */}
+      {/* Pay Button */}
       <div className="flex-shrink-0 p-4 border-t border-border bg-background">
         <button
           onClick={handlePayment}

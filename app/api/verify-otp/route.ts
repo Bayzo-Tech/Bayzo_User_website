@@ -37,8 +37,10 @@ export async function POST(request: Request) {
     const userRef = adminDb.collection('users').doc(mobile);
     const userSnap = await userRef.get();
 
+    // ✅ FIX: phone number also save as displayPhone for easy reading
     await userRef.set({
       phone: mobile,
+      displayPhone: phone,          // ✅ 10 digit phone save
       createdAt: userSnap.exists ? userSnap.data()?.createdAt : new Date(),
       updatedAt: new Date(),
       role: 'user',
@@ -47,8 +49,17 @@ export async function POST(request: Request) {
 
     const token = await adminAuth.createCustomToken(mobile);
     const profileComplete = userSnap.exists ? userSnap.data()?.profileComplete || false : false;
+    // ✅ FIX: name also return to frontend
+    const userName = userSnap.exists ? userSnap.data()?.name || '' : '';
 
-    return NextResponse.json({ success: true, token, profileComplete, uid: mobile });
+    return NextResponse.json({
+      success: true,
+      token,
+      profileComplete,
+      uid: mobile,
+      name: userName,        // ✅ name return
+      phone: phone           // ✅ phone return
+    });
 
   } catch (error) {
     console.error('Error verifying OTP:', error);

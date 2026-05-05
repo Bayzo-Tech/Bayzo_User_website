@@ -25,7 +25,7 @@ export default function OnboardingPage() {
           }`}
       >
         <h1 className="text-6xl font-black text-white tracking-tighter">
-          BAY<span className="text-primary">ZO</span>
+          VAY<span className="text-primary">RA</span>
         </h1>
       </div>
     </div>
