@@ -32,7 +32,6 @@ export default function PaymentPage() {
   const [razorpayLoaded, setRazorpayLoaded] = useState(false);
   const [showFailPopup, setShowFailPopup] = useState(false);
   const [failMessage, setFailMessage] = useState("");
-  // ✅ FIX: Customer details state
   const [customerName, setCustomerName] = useState("Customer");
   const [customerPhone, setCustomerPhone] = useState("");
 
@@ -47,21 +46,38 @@ export default function PaymentPage() {
     }
   }, []);
 
-  // ✅ FIX: Fetch customer name & phone from Firestore when user loads
+  // ✅ FIXED: Try uid directly, then with 91 prefix
   useEffect(() => {
     const fetchCustomerDetails = async () => {
       if (!user?.uid) return;
       try {
-        const userDoc = await getDoc(doc(db, "users", user.uid));
+        // First try direct uid
+        let userDoc = await getDoc(doc(db, "users", user.uid));
+
+        // If not found, try with 91 prefix
+        if (!userDoc.exists()) {
+          const withPrefix = user.uid.startsWith("91")
+            ? user.uid
+            : `91${user.uid}`;
+          userDoc = await getDoc(doc(db, "users", withPrefix));
+        }
+
         if (userDoc.exists()) {
           const data = userDoc.data();
           if (data.name) setCustomerName(data.name);
-          // phone: "919751818488" → display as "9751818488"
-          const rawPhone = data.displayPhone || data.phone?.replace("91", "") || "";
+          const rawPhone =
+            data.displayPhone ||
+            data.phone?.replace(/^91/, "") ||
+            user.uid.replace(/^91/, "") ||
+            "";
           setCustomerPhone(rawPhone);
+        } else {
+          // Fallback: use uid as phone number
+          setCustomerPhone(user.uid.replace(/^91/, ""));
         }
       } catch (e) {
         console.error("Error fetching customer details:", e);
+        setCustomerPhone(user.uid.replace(/^91/, ""));
       }
     };
     fetchCustomerDetails();
@@ -93,18 +109,15 @@ export default function PaymentPage() {
       description: "Beach Food Delivery",
       handler: async function (response: any) {
         try {
-          // ✅ FIX: customerName, customerPhone, vendorName now saved properly
           const vendorName = cart.length > 0 ? cart[0].stallName : "Unknown Vendor";
           const itemsSummary = cart.map(i => `${i.quantity}x ${i.name}`).join(", ");
 
           await addDoc(collection(db, "orders"), {
             userId: user?.uid || "guest",
-            // ✅ These 3 fields fix the "Unknown" problem in admin panel
             customerName: customerName,
             customerPhone: customerPhone,
             vendorName: vendorName,
             itemsSummary: itemsSummary,
-            // existing fields unchanged below
             phone: user?.phoneNumber || customerPhone || "unknown",
             location: { area, zone: `Zone ${zone}` },
             items: cart.map((i) => ({
@@ -180,7 +193,6 @@ export default function PaymentPage() {
         onLoad={() => setRazorpayLoaded(true)}
       />
 
-      {/* Payment Failed Popup */}
       {showFailPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
           <div className="bg-card rounded-3xl p-6 w-full max-w-sm border border-border shadow-2xl">
@@ -239,7 +251,6 @@ export default function PaymentPage() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Delivery Info */}
         <div className="bg-card rounded-2xl border border-border p-4 flex items-center gap-3">
           <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
             <MapPin size={20} className="text-primary" />
@@ -252,7 +263,6 @@ export default function PaymentPage() {
           </div>
         </div>
 
-        {/* Order Items */}
         <div className="bg-card rounded-2xl border border-border p-4">
           <h3 className="font-bold text-foreground mb-3 flex items-center gap-2">
             <ShoppingBag size={18} className="text-primary" />
@@ -291,7 +301,6 @@ export default function PaymentPage() {
           </div>
         </div>
 
-        {/* Bill Summary */}
         <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
           <h3 className="font-bold text-foreground border-b border-border pb-2">
             Bill Summary
