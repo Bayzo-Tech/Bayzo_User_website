@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 
 declare global {
-    var deliveryOtpStore: Map<string, { otp: string; expiry: number; orderId: string }>;
+    var handoverOtpStore: Map<string, { otp: string; expiry: number; orderId: string }>;
 }
-if (!global.deliveryOtpStore) {
-    global.deliveryOtpStore = new Map();
+if (!global.handoverOtpStore) {
+    global.handoverOtpStore = new Map();
 }
 
 export async function POST(request: Request) {
@@ -16,6 +16,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, message: 'Order ID required' }, { status: 400 });
         }
 
+        // Get order from Firestore
         const orderRef = adminDb.collection('orders').doc(orderId);
         const orderSnap = await orderRef.get();
 
@@ -24,22 +25,28 @@ export async function POST(request: Request) {
         }
 
         const orderData = orderSnap.data()!;
-        const customerPhone = orderData.customerPhone || orderData.displayPhone || '';
 
-        if (!customerPhone) {
-            return NextResponse.json({ success: false, message: 'Customer phone not found' }, { status: 400 });
+        // ✅ Delivery Partner phone number fetch
+        const deliveryPartnerPhone = orderData.deliveryPartnerPhone || '';
+
+        if (!deliveryPartnerPhone) {
+            return NextResponse.json(
+                { success: false, message: 'Delivery partner not assigned yet' },
+                { status: 400 }
+            );
         }
 
         // 4-digit OTP generate
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
-        global.deliveryOtpStore.set(orderId, {
+        // Store in memory
+        global.handoverOtpStore.set(orderId, {
             otp,
             expiry: Date.now() + 10 * 60 * 1000,
             orderId,
         });
 
-        // ✅ Template #2 (214467) - Delivery to Customer
+        // ✅ Send SMS to Delivery Partner - Template #1 (214468)
         const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
             method: 'POST',
             headers: {
@@ -49,24 +56,25 @@ export async function POST(request: Request) {
             body: JSON.stringify({
                 route: 'dlt',
                 sender_id: 'VAYRAA',
-                message: '214467',
+                message: '214468',
                 variables_values: otp,
                 flash: 0,
-                numbers: customerPhone,
+                numbers: deliveryPartnerPhone,
             }),
         });
 
         const data = await response.json();
-        console.log('Delivery OTP SMS response:', JSON.stringify(data));
+        console.log('Handover OTP SMS:', JSON.stringify(data));
 
         if (data.return === true) {
+            // Save OTP in Firestore
             await orderRef.update({
-                deliveryOtp: otp,
-                deliveryOtpSentAt: new Date(),
-                deliveryOtpExpiry: new Date(Date.now() + 10 * 60 * 1000),
+                handoverOtp: otp,
+                handoverOtpSentAt: new Date(),
+                handoverOtpExpiry: new Date(Date.now() + 10 * 60 * 1000),
             });
 
-            return NextResponse.json({ success: true, message: 'OTP sent to customer' });
+            return NextResponse.json({ success: true, message: 'OTP sent to delivery partner' });
         } else {
             return NextResponse.json(
                 { success: false, message: data.message?.[0] || 'SMS send failed' },
@@ -75,7 +83,7 @@ export async function POST(request: Request) {
         }
 
     } catch (error) {
-        console.error('Send Delivery OTP Error:', error);
+        console.error('Send Handover OTP Error:', error);
         return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 });
     }
 }
