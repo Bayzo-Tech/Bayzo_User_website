@@ -1,3 +1,4 @@
+// payment/page.tsx - FULL FIXED CODE
 "use client";
 
 import { useEffect, useState } from "react";
@@ -6,7 +7,16 @@ import { useUser } from "@/context/UserContext";
 import { ArrowLeft, MapPin, ShoppingBag, AlertCircle, X } from "lucide-react";
 import Script from "next/script";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  doc,
+  getDoc,
+  query,
+  where,
+  getDocs,
+} from "firebase/firestore";
 
 declare global {
   interface Window {
@@ -46,22 +56,17 @@ export default function PaymentPage() {
     }
   }, []);
 
-  // ✅ FIXED: Try uid directly, then with 91 prefix
   useEffect(() => {
     const fetchCustomerDetails = async () => {
       if (!user?.uid) return;
       try {
-        // First try direct uid
         let userDoc = await getDoc(doc(db, "users", user.uid));
-
-        // If not found, try with 91 prefix
         if (!userDoc.exists()) {
           const withPrefix = user.uid.startsWith("91")
             ? user.uid
             : `91${user.uid}`;
           userDoc = await getDoc(doc(db, "users", withPrefix));
         }
-
         if (userDoc.exists()) {
           const data = userDoc.data();
           if (data.name) setCustomerName(data.name);
@@ -72,7 +77,6 @@ export default function PaymentPage() {
             "";
           setCustomerPhone(rawPhone);
         } else {
-          // Fallback: use uid as phone number
           setCustomerPhone(user.uid.replace(/^91/, ""));
         }
       } catch (e) {
@@ -97,6 +101,21 @@ export default function PaymentPage() {
   const total = subtotal + deliveryFee;
   const totalItems = cart.reduce((sum, i) => sum + i.quantity, 0);
 
+  // ✅ NEW: vendorId lookup from vendors collection
+  const getVendorId = async (stallName: string): Promise<string> => {
+    try {
+      const q = query(
+        collection(db, "vendors"),
+        where("stallName", "==", stallName)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) return snap.docs[0].id;
+    } catch (e) {
+      console.error("vendorId lookup failed:", e);
+    }
+    return "";
+  };
+
   const handlePayment = async () => {
     if (!razorpayLoaded || isProcessing) return;
     setIsProcessing(true);
@@ -109,14 +128,21 @@ export default function PaymentPage() {
       description: "Beach Food Delivery",
       handler: async function (response: any) {
         try {
-          const vendorName = cart.length > 0 ? cart[0].stallName : "Unknown Vendor";
-          const itemsSummary = cart.map(i => `${i.quantity}x ${i.name}`).join(", ");
+          const vendorName =
+            cart.length > 0 ? cart[0].stallName : "Unknown Vendor";
+          const itemsSummary = cart
+            .map((i) => `${i.quantity}x ${i.name}`)
+            .join(", ");
+
+          // ✅ NEW: vendorId fetch
+          const vendorId = await getVendorId(vendorName);
 
           await addDoc(collection(db, "orders"), {
             userId: user?.uid || "guest",
             customerName: customerName,
             customerPhone: customerPhone,
             vendorName: vendorName,
+            vendorId: vendorId, // ✅ FIXED: vendorId add பண்றோம்
             itemsSummary: itemsSummary,
             phone: user?.phoneNumber || customerPhone || "unknown",
             location: { area, zone: `Zone ${zone}` },
@@ -142,7 +168,8 @@ export default function PaymentPage() {
         }
       },
       prefill: {
-        contact: customerPhone || user?.phoneNumber?.replace("+91", "") || "",
+        contact:
+          customerPhone || user?.phoneNumber?.replace("+91", "") || "",
       },
       theme: { color: "#FF6B00" },
       modal: {
@@ -154,7 +181,6 @@ export default function PaymentPage() {
 
     try {
       const rzp = new window.Razorpay(options);
-
       rzp.on("payment.failed", async (response: any) => {
         try {
           await addDoc(collection(db, "orders"), {
@@ -177,7 +203,6 @@ export default function PaymentPage() {
           setShowFailPopup(true);
         }
       });
-
       rzp.open();
     } catch (err) {
       setIsProcessing(false);
@@ -320,7 +345,6 @@ export default function PaymentPage() {
             <span className="font-black text-foreground text-xl">₹{total}</span>
           </div>
         </div>
-
         <div className="h-4" />
       </div>
 
