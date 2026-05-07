@@ -1,46 +1,54 @@
 import { NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 
-declare global {
-  var otpStore: Map<string, { otp: string; expiry: number }>;
-}
-if (!global.otpStore) {
-  global.otpStore = new Map();
-}
-
 export async function POST(request: Request) {
   try {
     const { phone, otp } = await request.json();
 
     if (!phone || !otp) {
-      return NextResponse.json({ success: false, message: 'Phone and OTP are required' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: 'Phone and OTP are required' },
+        { status: 400 }
+      );
     }
 
-    const stored = global.otpStore.get(phone);
+    // ✅ FIX: Firestore-லிருந்து OTP எடுக்கிறோம்
+    const otpDoc = await adminDb.collection('otpStore').doc(phone).get();
 
-    if (!stored) {
-      return NextResponse.json({ success: false, message: 'OTP expired. Please request a new one.' }, { status: 400 });
+    if (!otpDoc.exists) {
+      return NextResponse.json(
+        { success: false, message: 'OTP expired. Please request a new one.' },
+        { status: 400 }
+      );
     }
 
-    if (Date.now() > stored.expiry) {
-      global.otpStore.delete(phone);
-      return NextResponse.json({ success: false, message: 'OTP expired. Please request a new one.' }, { status: 400 });
+    const stored = otpDoc.data();
+
+    if (Date.now() > stored?.expiry) {
+      await adminDb.collection('otpStore').doc(phone).delete();
+      return NextResponse.json(
+        { success: false, message: 'OTP expired. Please request a new one.' },
+        { status: 400 }
+      );
     }
 
-    if (stored.otp !== otp) {
-      return NextResponse.json({ success: false, message: 'Invalid OTP. Please try again.' }, { status: 400 });
+    if (stored?.otp !== otp) {
+      return NextResponse.json(
+        { success: false, message: 'Invalid OTP. Please try again.' },
+        { status: 400 }
+      );
     }
 
-    global.otpStore.delete(phone);
+    // ✅ OTP சரியா இருந்தா delete பண்றோம்
+    await adminDb.collection('otpStore').doc(phone).delete();
 
     const mobile = `91${phone}`;
     const userRef = adminDb.collection('users').doc(mobile);
     const userSnap = await userRef.get();
 
-    // ✅ FIX: phone number also save as displayPhone for easy reading
     await userRef.set({
       phone: mobile,
-      displayPhone: phone,          // ✅ 10 digit phone save
+      displayPhone: phone,
       createdAt: userSnap.exists ? userSnap.data()?.createdAt : new Date(),
       updatedAt: new Date(),
       role: 'user',
@@ -49,7 +57,6 @@ export async function POST(request: Request) {
 
     const token = await adminAuth.createCustomToken(mobile);
     const profileComplete = userSnap.exists ? userSnap.data()?.profileComplete || false : false;
-    // ✅ FIX: name also return to frontend
     const userName = userSnap.exists ? userSnap.data()?.name || '' : '';
 
     return NextResponse.json({
@@ -57,12 +64,15 @@ export async function POST(request: Request) {
       token,
       profileComplete,
       uid: mobile,
-      name: userName,        // ✅ name return
-      phone: phone           // ✅ phone return
+      name: userName,
+      phone: phone
     });
 
   } catch (error) {
     console.error('Error verifying OTP:', error);
-    return NextResponse.json({ success: false, message: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { success: false, message: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }

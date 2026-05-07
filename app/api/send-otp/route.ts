@@ -1,11 +1,5 @@
 import { NextResponse } from 'next/server';
-
-declare global {
-  var otpStore: Map<string, { otp: string; expiry: number }>;
-}
-if (!global.otpStore) {
-  global.otpStore = new Map();
-}
+import { adminDb } from '@/lib/firebase-admin';
 
 export async function POST(request: Request) {
   try {
@@ -20,9 +14,11 @@ export async function POST(request: Request) {
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    global.otpStore.set(phone, {
+    // ✅ FIX: Firestore-ல save பண்றோம் - Vercel serverless safe
+    await adminDb.collection('otpStore').doc(phone).set({
       otp,
       expiry: Date.now() + 10 * 60 * 1000,
+      createdAt: new Date(),
     });
 
     const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
@@ -34,7 +30,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         route: 'dlt',
         sender_id: 'VAYRAA',
-        message: '214466',        // ✅ உங்கள் Template #3 Message ID
+        message: '214466',
         variables_values: otp,
         flash: 0,
         numbers: phone,
