@@ -24,7 +24,8 @@ const VALID_COUPONS: Record<string, number> = {
 
 export default function CartPage() {
   const router = useRouter();
-  const { zone } = useUser();
+  // ✅ FIX: deliveryFee Firebase-லிருந்து வருது
+  const { zone, deliveryFee } = useUser();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [mounted, setMounted] = useState(false);
   const [couponCode, setCouponCode] = useState("");
@@ -88,7 +89,7 @@ export default function CartPage() {
     setCouponError("");
   };
 
-  const deliveryFee = zone ? (zone <= 3 ? 20 : 25) : 20;
+  // ✅ FIX: hardcode தீர்த்தோம் - Firebase fee use பண்றோம்
   const subtotal = cart.reduce(
     (sum, i) => sum + finalPrice(i) * i.quantity,
     0
@@ -130,7 +131,6 @@ export default function CartPage() {
   }
 
   return (
-    // ✅ Fix: flex flex-col h-screen so button stays at bottom always
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 bg-background/90 backdrop-blur-md px-4 py-3 flex items-center gap-4 border-b border-border">
@@ -148,7 +148,6 @@ export default function CartPage() {
         </div>
       </div>
 
-      {/* ✅ Fix: overflow-y-auto so only this section scrolls */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Cart Items */}
         <div className="space-y-3">
@@ -178,14 +177,14 @@ export default function CartPage() {
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <span
                         className={`w-3.5 h-3.5 rounded-sm border-2 flex items-center justify-center flex-shrink-0 ${item.foodType === "nonveg"
-                            ? "border-red-500"
-                            : "border-green-500"
+                          ? "border-red-500"
+                          : "border-green-500"
                           }`}
                       >
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${item.foodType === "nonveg"
-                              ? "bg-red-500"
-                              : "bg-green-500"
+                            ? "bg-red-500"
+                            : "bg-green-500"
                             }`}
                         ></span>
                       </span>
@@ -307,6 +306,7 @@ export default function CartPage() {
             <span className="text-muted">
               Delivery Fee {zone ? `(Zone ${zone})` : ""}
             </span>
+            {/* ✅ FIX: Firebase fee show பண்றோம் */}
             <span className="font-semibold text-foreground">₹{deliveryFee}</span>
           </div>
           {discountAmount > 0 && (
@@ -325,11 +325,9 @@ export default function CartPage() {
           </div>
         </div>
 
-        {/* Bottom padding so last item not hidden behind button */}
         <div className="h-4" />
       </div>
 
-      {/* ✅ Fix: flex-shrink-0 so button never gets pushed out */}
       <div className="flex-shrink-0 p-4 bg-background border-t border-border">
         <button
           onClick={() => router.push("/payment")}

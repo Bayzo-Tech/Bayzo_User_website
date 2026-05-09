@@ -1,4 +1,3 @@
-// payment/page.tsx - FULL FIXED CODE
 "use client";
 
 import { useEffect, useState } from "react";
@@ -36,7 +35,8 @@ type CartItem = {
 
 export default function PaymentPage() {
   const router = useRouter();
-  const { user, area, zone } = useUser();
+  // ✅ FIX: deliveryFee Firebase-லிருந்து வருது
+  const { user, area, zone, deliveryFee } = useUser();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [razorpayLoaded, setRazorpayLoaded] = useState(false);
@@ -93,7 +93,7 @@ export default function PaymentPage() {
     return item.price;
   };
 
-  const deliveryFee = zone ? (zone <= 3 ? 20 : 25) : 20;
+  // ✅ FIX: hardcode தீர்த்தோம் - Firebase fee use பண்றோம்
   const subtotal = cart.reduce(
     (sum, i) => sum + finalPrice(i) * i.quantity,
     0
@@ -101,7 +101,6 @@ export default function PaymentPage() {
   const total = subtotal + deliveryFee;
   const totalItems = cart.reduce((sum, i) => sum + i.quantity, 0);
 
-  // ✅ NEW: vendorId lookup from vendors collection
   const getVendorId = async (stallName: string): Promise<string> => {
     try {
       const q = query(
@@ -134,7 +133,6 @@ export default function PaymentPage() {
             .map((i) => `${i.quantity}x ${i.name}`)
             .join(", ");
 
-          // ✅ NEW: vendorId fetch
           const vendorId = await getVendorId(vendorName);
 
           await addDoc(collection(db, "orders"), {
@@ -142,7 +140,7 @@ export default function PaymentPage() {
             customerName: customerName,
             customerPhone: customerPhone,
             vendorName: vendorName,
-            vendorId: vendorId, // ✅ FIXED: vendorId add பண்றோம்
+            vendorId: vendorId,
             itemsSummary: itemsSummary,
             phone: user?.phoneNumber || customerPhone || "unknown",
             location: { area, zone: `Zone ${zone}` },
@@ -153,6 +151,7 @@ export default function PaymentPage() {
               stallName: i.stallName,
             })),
             itemTotal: subtotal,
+            // ✅ FIX: Firebase fee save பண்றோம்
             deliveryFee,
             totalAmount: total,
             paymentId: response.razorpay_payment_id,
@@ -336,6 +335,7 @@ export default function PaymentPage() {
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted">Delivery Fee (Zone {zone})</span>
+            {/* ✅ FIX: Firebase fee show பண்றோம் */}
             <span className="font-semibold text-foreground">₹{deliveryFee}</span>
           </div>
           <div className="border-t border-border pt-3 flex justify-between">

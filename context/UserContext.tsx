@@ -11,36 +11,42 @@ interface UserContextType {
   zone: number | null;
   setZone: (zone: number | null) => void;
   role: string | null;
+  // ✅ NEW: deliveryFee Firebase-லிருந்து
+  deliveryFee: number;
+  setDeliveryFee: (fee: number) => void;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore";
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [area, setArea] = useState<string>("");
   const [zone, setZone] = useState<number | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  // ✅ NEW: deliveryFee state - default 20
+  const [deliveryFee, setDeliveryFee] = useState<number>(20);
 
   useEffect(() => {
     const savedArea = localStorage.getItem("bayzo_area");
     const savedZone = localStorage.getItem("bayzo_zone");
+    const savedFee = localStorage.getItem("bayzo_delivery_fee");
     if (savedArea) setArea(savedArea);
     if (savedZone) setZone(Number(savedZone));
+    // ✅ NEW: saved fee restore
+    if (savedFee) setDeliveryFee(Number(savedFee));
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
-        // ✅ Check if user still exists in Firestore
         try {
           const userDoc = await getDoc(doc(db, "users", currentUser.uid));
           if (userDoc.exists()) {
             setUser(currentUser);
             setRole(userDoc.data().role || "user");
           } else {
-            // ✅ User deleted from Firestore - force logout
             await signOut(auth);
             document.cookie = "bayzo_session=; path=/; max-age=0";
             localStorage.removeItem("bayzo_token");
@@ -48,10 +54,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             localStorage.removeItem("bayzo_area");
             localStorage.removeItem("bayzo_zone");
             localStorage.removeItem("bayzo_cart");
+            localStorage.removeItem("bayzo_delivery_fee");
             setUser(null);
             setRole(null);
             setArea("");
             setZone(null);
+            setDeliveryFee(20);
             window.location.href = "/login";
           }
         } catch (error) {
@@ -60,7 +68,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           setRole("user");
         }
       } else {
-        // ✅ No auth user - clear everything
         document.cookie = "bayzo_session=; path=/; max-age=0";
         localStorage.removeItem("bayzo_token");
         localStorage.removeItem("user");
@@ -86,8 +93,45 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // ✅ NEW: Firebase-லிருந்து zone fee fetch பண்றோம்
+  const handleSetZoneWithFee = async (newZone: number | null, beachArea?: string) => {
+    handleSetZone(newZone);
+    if (newZone === null) {
+      setDeliveryFee(20);
+      localStorage.setItem("bayzo_delivery_fee", "20");
+      return;
+    }
+    try {
+      const targetArea = beachArea || area;
+      const beachSnap = await getDocs(collection(db, "beaches"));
+      let foundFee = 20;
+      beachSnap.docs.forEach((beachDoc) => {
+        const beachData = beachDoc.data();
+        if (beachData.area === targetArea || beachData.name === targetArea) {
+          const zones: any[] = beachData.zones || [];
+          // zone number = index + 1 (Zone 1, Zone 2...)
+          const matchedZone = zones[newZone - 1];
+          if (matchedZone && matchedZone.fee) {
+            foundFee = matchedZone.fee;
+          }
+        }
+      });
+      setDeliveryFee(foundFee);
+      localStorage.setItem("bayzo_delivery_fee", foundFee.toString());
+    } catch (e) {
+      console.error("Fee fetch error:", e);
+      setDeliveryFee(20);
+    }
+  };
+
   return (
-    <UserContext.Provider value={{ user, setUser, area, setArea: handleSetArea, zone, setZone: handleSetZone, role }}>
+    <UserContext.Provider value={{
+      user, setUser,
+      area, setArea: handleSetArea,
+      zone, setZone: handleSetZoneWithFee,
+      role,
+      deliveryFee, setDeliveryFee,
+    }}>
       {children}
     </UserContext.Provider>
   );
