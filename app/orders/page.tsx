@@ -32,8 +32,6 @@ export default function OrdersPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Wait a brief moment to see if auth state resolves, though it's better handled
-    // but a simple timeout can prevent immediate flash redirect if user is still loading
     const timer = setTimeout(() => {
       if (!user && !loading) {
         router.replace("/");
@@ -47,18 +45,46 @@ export default function OrdersPage() {
 
     const fetchOrders = async () => {
       try {
-        const q = query(
-          collection(db, "orders"),
-          where("userId", "==", user.uid),
-          orderBy("createdAt", "desc")
+        // ✅ FIX: Both userId formats check பண்றோம்
+        const normalizedUid =
+          user.phoneNumber?.replace("+91", "91") || user.uid;
+
+        const idsToCheck = Array.from(
+          new Set([user.uid, normalizedUid])
         );
-        const snapshot = await getDocs(q);
-        const fetchedOrders = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Order[];
-        
-        setOrders(fetchedOrders);
+
+        let allOrders: Order[] = [];
+
+        for (const uid of idsToCheck) {
+          const q = query(
+            collection(db, "orders"),
+            where("userId", "==", uid),
+            orderBy("createdAt", "desc")
+          );
+          const snapshot = await getDocs(q);
+          const fetched = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as Order[];
+          allOrders = [...allOrders, ...fetched];
+        }
+
+        // Duplicate remove (same order id)
+        const seen = new Set();
+        allOrders = allOrders.filter((o) => {
+          if (seen.has(o.id)) return false;
+          seen.add(o.id);
+          return true;
+        });
+
+        // Sort by date
+        allOrders.sort((a, b) => {
+          const aTime = a.createdAt?.toMillis?.() || 0;
+          const bTime = b.createdAt?.toMillis?.() || 0;
+          return bTime - aTime;
+        });
+
+        setOrders(allOrders);
       } catch (error) {
         console.error("Error fetching orders:", error);
       } finally {
@@ -70,7 +96,7 @@ export default function OrdersPage() {
   }, [user]);
 
   const copyToClipboard = (e: React.MouseEvent, text: string, id: string) => {
-    e.preventDefault(); // prevent navigation
+    e.preventDefault();
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
@@ -115,8 +141,8 @@ export default function OrdersPage() {
             <span className="text-6xl mb-4">🏖️</span>
             <h2 className="text-xl font-semibold mb-2">No orders yet</h2>
             <p className="text-muted">Looks like you haven't placed any orders.</p>
-            <Link 
-              href="/home" 
+            <Link
+              href="/home"
               className="mt-6 bg-primary text-white px-6 py-3 rounded-full font-semibold active:scale-95 transition-transform"
             >
               Start Exploring
@@ -125,8 +151,8 @@ export default function OrdersPage() {
         ) : (
           <div className="space-y-4">
             {orders.map((order) => (
-              <Link 
-                key={order.id} 
+              <Link
+                key={order.id}
                 href={`/orders/${order.id}`}
                 className="block bg-card border border-border rounded-2xl p-4 active:scale-[0.98] transition-transform"
               >
@@ -135,9 +161,9 @@ export default function OrdersPage() {
                     <p className="text-xs text-muted mb-1">{formatDate(order.createdAt)}</p>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-mono text-muted-foreground">
-                        {order.paymentId.slice(0, 12)}...
+                        {order.paymentId?.slice(0, 12)}...
                       </span>
-                      <button 
+                      <button
                         onClick={(e) => copyToClipboard(e, order.paymentId, order.id)}
                         className="text-primary hover:text-primary/80 transition-colors"
                       >
@@ -151,7 +177,7 @@ export default function OrdersPage() {
                 </div>
 
                 <div className="space-y-1 mb-4">
-                  {order.items.map((item, i) => (
+                  {order.items?.map((item, i) => (
                     <div key={i} className="text-sm">
                       <span className="font-semibold">{item.quantity}x</span> {item.name}
                     </div>

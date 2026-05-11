@@ -35,7 +35,6 @@ type CartItem = {
 
 export default function PaymentPage() {
   const router = useRouter();
-  // ✅ FIX: deliveryFee Firebase-லிருந்து வருது
   const { user, area, zone, deliveryFee } = useUser();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -93,7 +92,6 @@ export default function PaymentPage() {
     return item.price;
   };
 
-  // ✅ FIX: hardcode தீர்த்தோம் - Firebase fee use பண்றோம்
   const subtotal = cart.reduce(
     (sum, i) => sum + finalPrice(i) * i.quantity,
     0
@@ -135,8 +133,14 @@ export default function PaymentPage() {
 
           const vendorId = await getVendorId(vendorName);
 
+          // ✅ FIX: userId normalize - phone number format match
+          const normalizedUserId =
+            user?.phoneNumber?.replace("+91", "91") ||
+            user?.uid ||
+            "guest";
+
           await addDoc(collection(db, "orders"), {
-            userId: user?.uid || "guest",
+            userId: normalizedUserId,
             customerName: customerName,
             customerPhone: customerPhone,
             vendorName: vendorName,
@@ -151,7 +155,6 @@ export default function PaymentPage() {
               stallName: i.stallName,
             })),
             itemTotal: subtotal,
-            // ✅ FIX: Firebase fee save பண்றோம்
             deliveryFee,
             totalAmount: total,
             paymentId: response.razorpay_payment_id,
@@ -159,6 +162,7 @@ export default function PaymentPage() {
             orderStatus: "placed",
             createdAt: serverTimestamp(),
           });
+
           localStorage.removeItem("bayzo_cart");
           router.replace("/confirmed");
         } catch (e) {
@@ -183,7 +187,7 @@ export default function PaymentPage() {
       rzp.on("payment.failed", async (response: any) => {
         try {
           await addDoc(collection(db, "orders"), {
-            userId: user?.uid || "guest",
+            userId: user?.phoneNumber?.replace("+91", "91") || user?.uid || "guest",
             customerName: customerName,
             customerPhone: customerPhone,
             paymentStatus: "failed",
@@ -335,7 +339,6 @@ export default function PaymentPage() {
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted">Delivery Fee (Zone {zone})</span>
-            {/* ✅ FIX: Firebase fee show பண்றோம் */}
             <span className="font-semibold text-foreground">₹{deliveryFee}</span>
           </div>
           <div className="border-t border-border pt-3 flex justify-between">
